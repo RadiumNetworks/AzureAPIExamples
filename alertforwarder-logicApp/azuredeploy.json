@@ -1,0 +1,226 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "alertforwarder-logicApp",
+      "metadata": {
+        "description": "Logic App to forward Azure Monitor alerts to a custom REST endpoint"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for the Logic App"
+      }
+    },
+    "targetEndpointUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "The REST endpoint URL to forward alert payloads to"
+      }
+    },
+    "targetEndpointAuthHeader": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional Authorization header value for the target endpoint (e.g. 'Bearer xxx' or 'ApiKey xxx')"
+      }
+    }
+  },
+  "variables": {
+    "hasAuthHeader": "[not(empty(parameters('targetEndpointAuthHeader')))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "tags": {
+        "purpose": "alert-forwarding",
+        "createdBy": "arm-template"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "targetUrl": {
+              "type": "String",
+              "defaultValue": "[parameters('targetEndpointUrl')]"
+            },
+            "authHeader": {
+              "type": "SecureString",
+              "defaultValue": "[parameters('targetEndpointAuthHeader')]"
+            }
+          },
+          "triggers": {
+            "When_an_Azure_Monitor_alert_is_received": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "method": "POST",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaId": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "essentials": {
+                          "type": "object",
+                          "properties": {
+                            "alertId": { "type": "string" },
+                            "alertRule": { "type": "string" },
+                            "severity": { "type": "string" },
+                            "signalType": { "type": "string" },
+                            "monitorCondition": { "type": "string" },
+                            "monitoringService": { "type": "string" },
+                            "alertTargetIDs": {
+                              "type": "array",
+                              "items": { "type": "string" }
+                            },
+                            "configurationItems": {
+                              "type": "array",
+                              "items": { "type": "string" }
+                            },
+                            "originAlertId": { "type": "string" },
+                            "firedDateTime": { "type": "string" },
+                            "resolvedDateTime": { "type": "string" },
+                            "description": { "type": "string" },
+                            "essentialsVersion": { "type": "string" },
+                            "alertContextVersion": { "type": "string" }
+                          }
+                        },
+                        "alertContext": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "actions": {
+            "Parse_Alert_Payload": {
+              "type": "ParseJson",
+              "runAfter": {},
+              "inputs": {
+                "content": "@triggerBody()",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaId": { "type": "string" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "essentials": { "type": "object" },
+                        "alertContext": { "type": "object" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "Compose_Forwarding_Payload": {
+              "type": "Compose",
+              "runAfter": {
+                "Parse_Alert_Payload": [ "Succeeded" ]
+              },
+              "inputs": {
+                "source": "AzureMonitorAlert",
+                "receivedAt": "@utcNow()",
+                "alert": {
+                  "id": "@body('Parse_Alert_Payload')?['data']?['essentials']?['alertId']",
+                  "rule": "@body('Parse_Alert_Payload')?['data']?['essentials']?['alertRule']",
+                  "severity": "@body('Parse_Alert_Payload')?['data']?['essentials']?['severity']",
+                  "signalType": "@body('Parse_Alert_Payload')?['data']?['essentials']?['signalType']",
+                  "monitorCondition": "@body('Parse_Alert_Payload')?['data']?['essentials']?['monitorCondition']",
+                  "monitoringService": "@body('Parse_Alert_Payload')?['data']?['essentials']?['monitoringService']",
+                  "description": "@body('Parse_Alert_Payload')?['data']?['essentials']?['description']",
+                  "firedDateTime": "@body('Parse_Alert_Payload')?['data']?['essentials']?['firedDateTime']",
+                  "resolvedDateTime": "@body('Parse_Alert_Payload')?['data']?['essentials']?['resolvedDateTime']",
+                  "targetResources": "@body('Parse_Alert_Payload')?['data']?['essentials']?['alertTargetIDs']",
+                  "configurationItems": "@body('Parse_Alert_Payload')?['data']?['essentials']?['configurationItems']"
+                },
+                "context": "@body('Parse_Alert_Payload')?['data']?['alertContext']",
+                "rawPayload": "@triggerBody()"
+              }
+            },
+            "Forward_To_REST_Endpoint": {
+              "type": "Http",
+              "runAfter": {
+                "Compose_Forwarding_Payload": [ "Succeeded" ]
+              },
+              "inputs": {
+                "method": "POST",
+                "uri": "@parameters('targetUrl')",
+                "headers": "[if(variables('hasAuthHeader'), json(concat('{\"Content-Type\":\"application/json\",\"Authorization\":\"', parameters('targetEndpointAuthHeader'), '\"}')), json('{\"Content-Type\":\"application/json\"}'))]",
+                "body": "@outputs('Compose_Forwarding_Payload')",
+                "retryPolicy": {
+                  "type": "exponential",
+                  "count": 3,
+                  "interval": "PT10S",
+                  "minimumInterval": "PT10S",
+                  "maximumInterval": "PT1H"
+                }
+              }
+            },
+            "Send_Success_Response": {
+              "type": "Response",
+              "runAfter": {
+                "Forward_To_REST_Endpoint": [ "Succeeded" ]
+              },
+              "inputs": {
+                "statusCode": 200,
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "status": "forwarded",
+                  "timestamp": "@utcNow()",
+                  "targetStatusCode": "@outputs('Forward_To_REST_Endpoint')['statusCode']"
+                }
+              }
+            },
+            "Send_Failure_Response": {
+              "type": "Response",
+              "runAfter": {
+                "Forward_To_REST_Endpoint": [ "Failed", "TimedOut" ]
+              },
+              "inputs": {
+                "statusCode": 502,
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "status": "forward_failed",
+                  "timestamp": "@utcNow()",
+                  "error": "@body('Forward_To_REST_Endpoint')"
+                }
+              }
+            }
+          },
+          "outputs": {}
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppCallbackUrl": {
+      "type": "string",
+      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_an_Azure_Monitor_alert_is_received'), '2019-05-01').value]"
+    },
+    "logicAppResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    }
+  }
+}

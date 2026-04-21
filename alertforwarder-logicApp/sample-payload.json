@@ -1,0 +1,43 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "alertRule": "VM Shutdown Alert",
+      "severity": "Sev1",
+      "signalType": "Activity Log",
+      "monitorCondition": "Fired",
+      "monitoringService": "Activity Log - Administrative",
+      "alertTargetIDs": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Compute/virtualMachines/myVM"
+      ],
+      "configurationItems": [
+        "myVM"
+      ],
+      "originAlertId": "00000000-0000-0000-0000-000000000000_myResourceGroup_microsoft.insights_activityLog_VM Shutdown Alert",
+      "firedDateTime": "2026-04-20T12:00:00.0000000Z",
+      "resolvedDateTime": "",
+      "description": "Alert triggered when VM is deallocated or stopped.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "authorization": {
+        "action": "Microsoft.Compute/virtualMachines/deallocate/action",
+        "scope": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Compute/virtualMachines/myVM"
+      },
+      "channels": "Operation",
+      "claims": "{\"aud\":\"https://management.core.windows.net/\"}",
+      "caller": "user@example.com",
+      "correlationId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "eventSource": "Administrative",
+      "eventTimestamp": "2026-04-20T12:00:00.0000000Z",
+      "level": "Informational",
+      "operationName": "Microsoft.Compute/virtualMachines/deallocate/action",
+      "operationId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "status": "Succeeded",
+      "subStatus": "",
+      "submissionTimestamp": "2026-04-20T12:01:00.0000000Z"
+    }
+  }
+}
