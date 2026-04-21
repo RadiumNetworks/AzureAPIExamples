@@ -1,0 +1,366 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "cpu-alert-kql-logicApp",
+      "metadata": {
+        "description": "Logic App that enriches CPU threshold alerts with KQL query results before forwarding"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for the Logic App"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "The full resource ID of the Log Analytics workspace to query (e.g. /subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/myWorkspace)"
+      }
+    },
+    "logAnalyticsWorkspaceGuid": {
+      "type": "string",
+      "metadata": {
+        "description": "The GUID (customer ID) of the Log Analytics workspace, found in the workspace properties"
+      }
+    },
+    "targetEndpointUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "The REST endpoint URL to forward enriched alert payloads to"
+      }
+    },
+    "targetEndpointAuthHeader": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional Authorization header value for the target endpoint (e.g. 'Bearer xxx' or 'ApiKey xxx')"
+      }
+    }
+  },
+  "variables": {
+    "hasAuthHeader": "[not(empty(parameters('targetEndpointAuthHeader')))]",
+    "logAnalyticsApiUrl": "[concat('https://api.loganalytics.io/v1/workspaces/', parameters('logAnalyticsWorkspaceGuid'), '/query')]",
+    "logAnalyticsReaderRoleId": "73c42c96-874c-492b-b04d-ab87d138a893",
+    "roleAssignmentName": "[guid(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), variables('logAnalyticsReaderRoleId'), parameters('logAnalyticsWorkspaceId'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "purpose": "cpu-alert-kql-enrichment",
+        "createdBy": "arm-template"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "targetUrl": {
+              "type": "String",
+              "defaultValue": "[parameters('targetEndpointUrl')]"
+            },
+            "authHeader": {
+              "type": "SecureString",
+              "defaultValue": "[parameters('targetEndpointAuthHeader')]"
+            },
+            "logAnalyticsApiUrl": {
+              "type": "String",
+              "defaultValue": "[variables('logAnalyticsApiUrl')]"
+            }
+          },
+          "triggers": {
+            "When_a_CPU_alert_is_received": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "method": "POST",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaId": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "essentials": {
+                          "type": "object",
+                          "properties": {
+                            "alertId": { "type": "string" },
+                            "alertRule": { "type": "string" },
+                            "severity": { "type": "string" },
+                            "signalType": { "type": "string" },
+                            "monitorCondition": { "type": "string" },
+                            "monitoringService": { "type": "string" },
+                            "alertTargetIDs": {
+                              "type": "array",
+                              "items": { "type": "string" }
+                            },
+                            "configurationItems": {
+                              "type": "array",
+                              "items": { "type": "string" }
+                            },
+                            "originAlertId": { "type": "string" },
+                            "firedDateTime": { "type": "string" },
+                            "resolvedDateTime": { "type": "string" },
+                            "description": { "type": "string" },
+                            "essentialsVersion": { "type": "string" },
+                            "alertContextVersion": { "type": "string" }
+                          }
+                        },
+                        "alertContext": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "actions": {
+            "Parse_Alert_Payload": {
+              "type": "ParseJson",
+              "runAfter": {},
+              "inputs": {
+                "content": "@triggerBody()",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schemaId": { "type": "string" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "essentials": { "type": "object" },
+                        "alertContext": { "type": "object" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "Extract_Computer_Name": {
+              "type": "Compose",
+              "runAfter": {
+                "Parse_Alert_Payload": [ "Succeeded" ]
+              },
+              "inputs": "@first(body('Parse_Alert_Payload')?['data']?['essentials']?['configurationItems'])"
+            },
+            "Run_KQL_Query": {
+              "type": "Http",
+              "runAfter": {
+                "Extract_Computer_Name": [ "Succeeded" ]
+              },
+              "inputs": {
+                "method": "POST",
+                "uri": "@parameters('logAnalyticsApiUrl')",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "authentication": {
+                  "type": "ManagedServiceIdentity",
+                  "audience": "https://api.loganalytics.io"
+                },
+                "body": {
+                  "query": "@{concat('let computerName = \"', outputs('Extract_Computer_Name'), '\"; Perf | where Computer == computerName | where ObjectName == \"Processor\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\" | where TimeGenerated > ago(1h) | project TimeGenerated, Computer, CounterValue | order by TimeGenerated desc | take 20')}",
+                  "timespan": "PT1H"
+                },
+                "retryPolicy": {
+                  "type": "exponential",
+                  "count": 2,
+                  "interval": "PT5S",
+                  "minimumInterval": "PT5S",
+                  "maximumInterval": "PT30S"
+                }
+              }
+            },
+            "Parse_KQL_Results": {
+              "type": "ParseJson",
+              "runAfter": {
+                "Run_KQL_Query": [ "Succeeded" ]
+              },
+              "inputs": {
+                "content": "@body('Run_KQL_Query')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tables": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "columns": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": { "type": "string" },
+                                "type": { "type": "string" }
+                              }
+                            }
+                          },
+                          "rows": {
+                            "type": "array",
+                            "items": {
+                              "type": "array"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "Compose_Enriched_Payload": {
+              "type": "Compose",
+              "runAfter": {
+                "Parse_KQL_Results": [ "Succeeded" ]
+              },
+              "inputs": {
+                "source": "AzureMonitorAlert-KQLEnriched",
+                "receivedAt": "@utcNow()",
+                "alert": {
+                  "id": "@body('Parse_Alert_Payload')?['data']?['essentials']?['alertId']",
+                  "rule": "@body('Parse_Alert_Payload')?['data']?['essentials']?['alertRule']",
+                  "severity": "@body('Parse_Alert_Payload')?['data']?['essentials']?['severity']",
+                  "signalType": "@body('Parse_Alert_Payload')?['data']?['essentials']?['signalType']",
+                  "monitorCondition": "@body('Parse_Alert_Payload')?['data']?['essentials']?['monitorCondition']",
+                  "monitoringService": "@body('Parse_Alert_Payload')?['data']?['essentials']?['monitoringService']",
+                  "description": "@body('Parse_Alert_Payload')?['data']?['essentials']?['description']",
+                  "firedDateTime": "@body('Parse_Alert_Payload')?['data']?['essentials']?['firedDateTime']",
+                  "resolvedDateTime": "@body('Parse_Alert_Payload')?['data']?['essentials']?['resolvedDateTime']",
+                  "targetResources": "@body('Parse_Alert_Payload')?['data']?['essentials']?['alertTargetIDs']",
+                  "configurationItems": "@body('Parse_Alert_Payload')?['data']?['essentials']?['configurationItems']"
+                },
+                "context": "@body('Parse_Alert_Payload')?['data']?['alertContext']",
+                "kqlEnrichment": {
+                  "queryDescription": "CPU utilization (% Processor Time) over the last hour, sampled every collection interval",
+                  "computerName": "@outputs('Extract_Computer_Name')",
+                  "columns": "@body('Parse_KQL_Results')?['tables']?[0]?['columns']",
+                  "rows": "@body('Parse_KQL_Results')?['tables']?[0]?['rows']",
+                  "rowCount": "@length(body('Parse_KQL_Results')?['tables']?[0]?['rows'])"
+                },
+                "rawPayload": "@triggerBody()"
+              }
+            },
+            "Forward_To_REST_Endpoint": {
+              "type": "Http",
+              "runAfter": {
+                "Compose_Enriched_Payload": [ "Succeeded" ]
+              },
+              "inputs": {
+                "method": "POST",
+                "uri": "@parameters('targetUrl')",
+                "headers": "[if(variables('hasAuthHeader'), json(concat('{\"Content-Type\":\"application/json\",\"Authorization\":\"', parameters('targetEndpointAuthHeader'), '\"}')), json('{\"Content-Type\":\"application/json\"}'))]",
+                "body": "@outputs('Compose_Enriched_Payload')",
+                "retryPolicy": {
+                  "type": "exponential",
+                  "count": 3,
+                  "interval": "PT10S",
+                  "minimumInterval": "PT10S",
+                  "maximumInterval": "PT1H"
+                }
+              }
+            },
+            "Send_Success_Response": {
+              "type": "Response",
+              "runAfter": {
+                "Forward_To_REST_Endpoint": [ "Succeeded" ]
+              },
+              "inputs": {
+                "statusCode": 200,
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "status": "forwarded_with_enrichment",
+                  "timestamp": "@utcNow()",
+                  "targetStatusCode": "@outputs('Forward_To_REST_Endpoint')['statusCode']",
+                  "kqlRowsReturned": "@length(body('Parse_KQL_Results')?['tables']?[0]?['rows'])"
+                }
+              }
+            },
+            "Send_Failure_Response": {
+              "type": "Response",
+              "runAfter": {
+                "Forward_To_REST_Endpoint": [ "Failed", "TimedOut" ]
+              },
+              "inputs": {
+                "statusCode": 502,
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "status": "forward_failed",
+                  "timestamp": "@utcNow()",
+                  "error": "@body('Forward_To_REST_Endpoint')"
+                }
+              }
+            },
+            "Send_KQL_Failure_Response": {
+              "type": "Response",
+              "runAfter": {
+                "Run_KQL_Query": [ "Failed", "TimedOut" ]
+              },
+              "inputs": {
+                "statusCode": 500,
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "body": {
+                  "status": "kql_query_failed",
+                  "timestamp": "@utcNow()",
+                  "error": "@body('Run_KQL_Query')",
+                  "alert": "@body('Parse_Alert_Payload')?['data']?['essentials']"
+                }
+              }
+            }
+          },
+          "outputs": {}
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[variables('roleAssignmentName')]",
+      "scope": "[parameters('logAnalyticsWorkspaceId')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('logAnalyticsReaderRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppCallbackUrl": {
+      "type": "string",
+      "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', parameters('logicAppName'), 'When_a_CPU_alert_is_received'), '2019-05-01').value]"
+    },
+    "logicAppResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    },
+    "logicAppPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'full').identity.principalId]"
+    }
+  }
+}

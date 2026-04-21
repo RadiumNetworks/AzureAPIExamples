@@ -1,0 +1,51 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "alertRule": "CPU 100% Auto-Restart Alert",
+      "severity": "Sev1",
+      "signalType": "Metric",
+      "monitorCondition": "Fired",
+      "monitoringService": "Platform",
+      "alertTargetIDs": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Compute/virtualMachines/myVM"
+      ],
+      "configurationItems": [
+        "myVM"
+      ],
+      "originAlertId": "00000000-0000-0000-0000-000000000000_myResourceGroup_microsoft.insights_metricAlerts_CPU 100% Auto-Restart Alert",
+      "firedDateTime": "2026-04-21T14:30:00.0000000Z",
+      "resolvedDateTime": "",
+      "description": "CPU usage has been at 100% for more than 5 minutes. Auto-restart triggered.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "properties": null,
+      "conditionType": "SingleResourceMultipleMetricCriteria",
+      "condition": {
+        "windowSize": "PT5M",
+        "allOf": [
+          {
+            "metricName": "Percentage CPU",
+            "metricNamespace": "Microsoft.Compute/virtualMachines",
+            "operator": "GreaterThanOrEqual",
+            "threshold": "100",
+            "timeAggregation": "Average",
+            "dimensions": [
+              {
+                "name": "ResourceId",
+                "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Compute/virtualMachines/myVM"
+              }
+            ],
+            "metricValue": 100.0,
+            "webTestName": null
+          }
+        ],
+        "windowStartTime": "2026-04-21T14:25:00.0000000Z",
+        "windowEndTime": "2026-04-21T14:30:00.0000000Z"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertId": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "alertRule": "High CPU Usage Alert",
+      "severity": "Sev2",
+      "signalType": "Metric",
+      "monitorCondition": "Fired",
+      "monitoringService": "Platform",
+      "alertTargetIDs": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Compute/virtualMachines/myVM"
+      ],
+      "configurationItems": [
+        "myVM"
+      ],
+      "originAlertId": "00000000-0000-0000-0000-000000000000_myResourceGroup_microsoft.insights_metricAlerts_High CPU Usage Alert",
+      "firedDateTime": "2026-04-21T10:15:00.0000000Z",
+      "resolvedDateTime": "",
+      "description": "CPU usage exceeded 80% threshold on the virtual machine.",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+    },
+    "alertContext": {
+      "properties": null,
+      "conditionType": "SingleResourceMultipleMetricCriteria",
+      "condition": {
+        "windowSize": "PT5M",
+        "allOf": [
+          {
+            "metricName": "Percentage CPU",
+            "metricNamespace": "Microsoft.Compute/virtualMachines",
+            "operator": "GreaterThan",
+            "threshold": "80",
+            "timeAggregation": "Average",
+            "dimensions": [
+              {
+                "name": "ResourceId",
+                "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Compute/virtualMachines/myVM"
+              }
+            ],
+            "metricValue": 92.5,
+            "webTestName": null
+          }
+        ],
+        "windowStartTime": "2026-04-21T10:10:00.0000000Z",
+        "windowEndTime": "2026-04-21T10:15:00.0000000Z"
+      }
+    }
+  }
+}

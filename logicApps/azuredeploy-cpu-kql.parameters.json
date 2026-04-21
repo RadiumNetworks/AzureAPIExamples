@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": {
+      "value": "cpu-alert-kql-logicApp"
+    },
+    "logAnalyticsWorkspaceId": {
+      "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.OperationalInsights/workspaces/myWorkspace"
+    },
+    "logAnalyticsWorkspaceGuid": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "targetEndpointUrl": {
+      "value": "https://your-api.example.com/api/alerts"
+    },
+    "targetEndpointAuthHeader": {
+      "value": ""
+    }
+  }
+}

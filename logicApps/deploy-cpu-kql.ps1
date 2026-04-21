@@ -7,8 +7,13 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$TargetEndpointUrl,
 
-    [string]$AuthHeader = ""
+    [Parameter(Mandatory = $true)]
+    [string]$LogAnalyticsWorkspaceId,
 
+    [Parameter(Mandatory = $true)]
+    [string]$LogAnalyticsWorkspaceGuid,
+
+    [string]$AuthHeader = ""
 )
 $ErrorActionPreference = "Stop"
 
@@ -29,17 +34,18 @@ if (-not $rgExists) {
 
 # Deploy
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$templateFile = Join-Path $scriptDir "azuredeploy.json"
-Write-Host "Deploying ARM template..." -ForegroundColor Green
+$templateFile = Join-Path $scriptDir "azuredeploy-cpu-kql.json"
+Write-Host "Deploying CPU Alert + KQL enrichment Logic App..." -ForegroundColor Green
 
-
-$deploymentName = "alert-forwarder-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$deploymentName = "cpu-alert-kql-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
 $result = az deployment group create `
     --resource-group $ResourceGroupName `
     --name $deploymentName `
     --template-file $templateFile `
     --parameters targetEndpointUrl=$TargetEndpointUrl `
+    --parameters logAnalyticsWorkspaceId=$LogAnalyticsWorkspaceId `
+    --parameters logAnalyticsWorkspaceGuid=$LogAnalyticsWorkspaceGuid `
     --parameters targetEndpointAuthHeader=$AuthHeader `
     2>&1
 
@@ -55,3 +61,8 @@ Write-Host "Logic App Callback URL (use this in Azure Monitor Action Group):" -F
 Write-Host $output.properties.outputs.logicAppCallbackUrl.value -ForegroundColor White
 Write-Host "`nLogic App Resource ID:" -ForegroundColor Cyan
 Write-Host $output.properties.outputs.logicAppResourceId.value -ForegroundColor White
+Write-Host "`nManaged Identity Principal ID:" -ForegroundColor Cyan
+Write-Host $output.properties.outputs.logicAppPrincipalId.value -ForegroundColor White
+Write-Host "`nNote: The template assigns Log Analytics Reader role to the Logic App's managed identity." -ForegroundColor Yellow
+Write-Host "If the role assignment failed (e.g. insufficient permissions), assign it manually:" -ForegroundColor Yellow
+Write-Host "  az role assignment create --assignee <principalId> --role 'Log Analytics Reader' --scope '$LogAnalyticsWorkspaceId'" -ForegroundColor DarkGray
