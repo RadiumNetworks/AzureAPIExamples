@@ -1,5 +1,7 @@
 ## Deploy Logic app that can be triggered by a cpu metric treshold but adds additional data using a KQL query
 
+![Header](./cpu-kql.png)
+
 ```powershell
 
 .\deploy-cpu-kql.ps1 -ResourceGroupName "monitoring" `
@@ -28,6 +30,8 @@ Perf
 ```
 
 ## Deploy logic app that triggers a VM restart after a CPU metric threshold is met
+
+![Header](./cpu-restart.png)
 
 ```powershell
 
@@ -62,6 +66,9 @@ Perf
 
 
 ## Deploy a logic app that is triggered on schedule, reading all application and writing alerts about expiring certifiates to
+
+![Header](./check-credentials1.png)
+![Header](./check-credentials2.png)
 
 ### Create custom table
 
